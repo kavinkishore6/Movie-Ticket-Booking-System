@@ -1,6 +1,7 @@
 package com.MovieTicket.MovieBooking.service;
 
-import com.MovieTicket.MovieBooking.model.*;
+import com.MovieTicket.MovieBooking.exception.GlobalExceptionHandler;
+import com.MovieTicket.MovieBooking.model.Booking;
 import com.itextpdf.text.*;
 import com.itextpdf.text.pdf.BarcodeQRCode;
 import com.itextpdf.text.pdf.PdfPCell;
@@ -30,49 +31,68 @@ public class EmailService {
 
     @Async
     public void sendEmail(String toEmail, String subject, String message) {
-        SimpleMailMessage mailMessage = new SimpleMailMessage();
-        mailMessage.setTo(toEmail);
-        mailMessage.setSubject(subject);
-        mailMessage.setText(message);
-        mailMessage.setFrom("sarankirthic@gmail.com");
-        javaMailSender.send(mailMessage);
+        try {
+            SimpleMailMessage mailMessage = new SimpleMailMessage();
+            mailMessage.setTo(toEmail);
+            mailMessage.setSubject(subject);
+            mailMessage.setText(message);
+            mailMessage.setFrom("kavinred@gmail.com");
+            javaMailSender.send(mailMessage);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to send email", e);
+        }
     }
 
     public void sendBookingConfirmationEmail(Long bookingId, String toEmail) {
-     try {
-         Booking booking = bookingService.getBookingById(bookingId);
-         File tempFile = File.createTempFile("Book_My_Movie_Ticket_" + bookingId, ".pdf");
+        File tempFile = null;
+        try {
+            Booking booking = bookingService.getBookingById(bookingId);
 
-         // Generate PDF ticket
-         try (FileOutputStream fos = new FileOutputStream(tempFile)) {
-             createPdfTicket(booking, fos);
-         }
+            tempFile = File.createTempFile("Book_My_Movie_Ticket_" + bookingId, ".pdf");
 
-         // Send email with PDF attachment
-         MimeMessage message = javaMailSender.createMimeMessage();
-         MimeMessageHelper helper = getMimeMessageHelper(toEmail, message, booking);
+            try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+                createPdfTicket(booking, fos);
+            }
 
-         helper.addAttachment("Book_My_Movie_Ticket_" + bookingId + ".pdf", new FileSystemResource(tempFile));
-         javaMailSender.send(message);
+            MimeMessage message = javaMailSender.createMimeMessage();
+            MimeMessageHelper helper = getMimeMessageHelper(toEmail, message, booking);
 
-         tempFile.delete(); // optional cleanup
-     } catch (Exception e) {
-         e.printStackTrace();
-     }
+            helper.addAttachment(
+                    "Book_My_Movie_Ticket_" + bookingId + ".pdf",
+                    new FileSystemResource(tempFile)
+            );
+
+            javaMailSender.send(message);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to send booking confirmation email", e);
+        } finally {
+            if (tempFile != null && tempFile.exists()) {
+                tempFile.delete();
+            }
+        }
     }
 
-    private static MimeMessageHelper getMimeMessageHelper(String toEmail, MimeMessage message, Booking booking) throws MessagingException {
+    private static MimeMessageHelper getMimeMessageHelper(
+            String toEmail,
+            MimeMessage message,
+            Booking booking
+    ) throws MessagingException {
+
         MimeMessageHelper helper = new MimeMessageHelper(message, true);
         helper.setTo(toEmail);
         helper.setSubject("🎟 Booking Confirmed: Book My Movie E-Ticket");
-        helper.setText("Hi " + booking.getUser().getName() + ",\n\n" +
+        helper.setText(
+                "Hi " + booking.getUser().getName() + ",\n\n" +
                 "Thank you for booking with Book My Movie!\n\n" +
                 "Please find your e-ticket attached.\n\n" +
                 "Movie: " + booking.getShow().getMovie().getTitle() + "\n" +
-                "Show Time: " + booking.getShow().getShowDate() + " at " + booking.getShow().getShowTime() + "\n" +
+                "Show Time: " + booking.getShow().getShowDate() + " at " +
+                booking.getShow().getShowTime() + "\n" +
                 "Seats: " + booking.getSeatNumbers() + "\n\n" +
                 "Enjoy your movie!\n\n" +
-                "- Book My Movie Team");
+                "- Book My Movie Team"
+        );
         return helper;
     }
 
@@ -89,7 +109,6 @@ public class EmailService {
         table.setWidthPercentage(100);
         table.setWidths(new float[]{3, 2});
 
-        // Left
         PdfPCell left = new PdfPCell();
         left.setBorder(Rectangle.NO_BORDER);
         left.setPadding(20);
@@ -103,14 +122,17 @@ public class EmailService {
         left.addElement(new Paragraph("Amount: ₹" + booking.getTotalAmount(), normalFont));
         left.addElement(new Paragraph("Booking ID: " + booking.getId(), normalFont));
 
-        // Right
         PdfPCell right = new PdfPCell();
         right.setBorder(Rectangle.NO_BORDER);
         right.setPadding(20);
+
         BarcodeQRCode qr = new BarcodeQRCode(
-             "BookingID:" + booking.getId() +
-                     "|Movie:" + booking.getShow().getMovie().getTitle() +
-                     "|Seats:" + booking.getSeatNumbers(), 200, 200, null);
+                "BookingID:" + booking.getId() +
+                "|Movie:" + booking.getShow().getMovie().getTitle() +
+                "|Seats:" + booking.getSeatNumbers(),
+                200, 200, null
+        );
+
         Image qrImage = qr.getImage();
         qrImage.scaleToFit(180, 180);
         right.addElement(qrImage);
